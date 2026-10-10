@@ -1,0 +1,46 @@
+# Put TLS in front of this (Caddy, Traefik, a cloud load balancer). Twilio webhooks require HTTPS.
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: bravo
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: bravo
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck: { test: ["CMD-SHELL", "pg_isready -U bravo"], interval: 5s, retries: 10 }
+
+  api:
+    build: ./backend
+    env_file: .env
+    environment:
+      BV_ENV: production
+      BV_DATABASE_URL: postgresql+psycopg2://bravo:${POSTGRES_PASSWORD}@db:5432/bravo
+    depends_on: { db: { condition: service_healthy } }
+    expose: ["8000"]
+
+  scheduler:
+    build: ./backend
+    env_file: .env
+    environment:
+      BV_ENV: production
+      BV_DATABASE_URL: postgresql+psycopg2://bravo:${POSTGRES_PASSWORD}@db:5432/bravo
+    depends_on: [api]
+    # Follow-up scan, hot-lead escalation, reminders, and sending approved messages that were waiting for contact hours.
+    command: ["sh", "-c", "while true; do python -m bravo.cli run-cycle; sleep 300; done"]
+
+  dashboard:
+    build: ./dashboard
+    expose: ["80"]
+    depends_on: [api]
+
+  # Public HTTPS entry point with automatic certificates. Point your domain's DNS at this server first.
+  caddy:
+    image: caddy:2
+    ports: ["80:80", "443:443"]
+    env_file: .env
+    volumes: [./Caddyfile:/etc/caddy/Caddyfile:ro, caddy_data:/data]
+    depends_on: [api, dashboard]
+
+volumes:
+  pgdata:
+  caddy_data:
