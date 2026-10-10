@@ -1,0 +1,49 @@
+name: Jarvis CI
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'bravo-vision/**'
+      - '.github/workflows/jarvis-ci.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'bravo-vision/**'
+      - '.github/workflows/jarvis-ci.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: bravo-vision/backend
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install
+        run: |
+          python3 -m venv .venv
+          .venv/bin/pip install --quiet -e ".[dev]"
+      - name: Test
+        run: .venv/bin/python -m pytest -q --cov=bravo
+
+  dashboard:
+    name: Dashboard build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: bravo-vision/dashboard
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Build
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
